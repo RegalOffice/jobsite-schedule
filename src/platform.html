@@ -1,0 +1,130 @@
+<!-- Standalone platform layer: login, Supabase-backed document store, downloads.
+     It provides the same window.claude.use("db" | "user" | "downloads") interface the board was written against. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+#authGate{position:fixed;inset:0;z-index:100;background:var(--bg,#eceff1);display:flex;align-items:center;justify-content:center;padding:16px}
+#authGate[hidden]{display:none}
+#authGate form{background:var(--panel,#fff);border:1px solid var(--line,#d3d9de);border-radius:10px;padding:28px 26px;width:min(380px,100%);display:flex;flex-direction:column;gap:14px;box-shadow:0 12px 40px rgba(20,30,40,.12)}
+#authGate h1{margin:0;font-size:28px}
+#authGate .mark{width:100%;height:8px;min-height:0;align-self:auto;border-radius:2px}
+#authGate label{display:flex;flex-direction:column;gap:5px;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#5b6670);font-weight:600}
+#authGate input{font-size:15px;text-transform:none;letter-spacing:0;font-weight:400}
+#authGate .err{color:var(--bad,#c62828);font-size:14px;min-height:1em;margin:0}
+#authBar{position:fixed;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:15;font-size:12px;color:var(--muted,#5b6670);background:var(--panel,#fff);border:1px solid var(--line,#d3d9de);border-radius:16px;padding:3px 4px 3px 12px;display:flex;gap:8px;align-items:center}
+#authBar[hidden]{display:none}
+#authBar button{border:0;background:var(--panel-2,#f6f8f9);border-radius:12px;padding:3px 10px;cursor:pointer;font:inherit;color:var(--ink,#1b2126)}
+</style>
+<div id="authGate" hidden>
+  <form id="authForm" autocomplete="on">
+    <span class="mark" aria-hidden="true"></span>
+    <div><div class="eyebrow">Bancroft Construction</div><h1>Jobsite Schedule Board</h1></div>
+    <label for="authName">Your name<input type="text" id="authName" autocomplete="name" placeholder="Shown in the change history" required></label>
+    <label for="authPass" id="authPassWrap">Password<input type="password" id="authPass" autocomplete="current-password" required></label>
+    <p class="err" id="authErr" role="alert"></p>
+    <button class="btn primary" type="submit" id="authGo">Sign in</button>
+  </form>
+</div>
+<div id="authBar" hidden><span id="authWho"></span><button type="button" id="authOut">Sign out</button></div>
+<script>
+(function(){
+"use strict";
+const CFG=window.SCHED_CONFIG||{};
+const gate=document.getElementById("authGate"),bar=document.getElementById("authBar");
+const NAME_KEY="jsb.myName";
+const getName=()=>{try{return localStorage.getItem(NAME_KEY)||""}catch(e){return ""}};
+const setName=n=>{try{localStorage.setItem(NAME_KEY,n)}catch(e){}};
+let resolveReady;const ready=new Promise(r=>resolveReady=r);
+if(!window.supabase||!CFG.url||!CFG.anonKey){ // not configured: tell whoever deploys it
+  document.addEventListener("DOMContentLoaded",()=>{gate.hidden=false;document.getElementById("authErr").textContent="This site isn’t connected to its database yet. Fill in config.js (see README).";document.getElementById("authGo").disabled=true});
+  window.claude={use:()=>Promise.resolve(null)};return;
+}
+const sb=window.supabase.createClient(CFG.url,CFG.anonKey,{auth:{persistSession:true,autoRefreshToken:true,storageKey:"jsb-auth"}});
+const T="sched_docs";
+
+/* ---- document store (collections of JSON documents, keyed "collection/id") ---- */
+const regs=new Set(),timers={};
+function refetch(coll){clearTimeout(timers[coll]);timers[coll]=setTimeout(()=>regs.forEach(r=>{if(r.coll===coll)r.run()}),120)}
+const fail=(error)=>({code:/row-level security|permission|JWT|not authorized/i.test(error.message||"")?"invalid_argument":"unavailable",message:error.message||String(error)});
+const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+const split=p=>{const i=p.lastIndexOf("/");return {coll:p.slice(0,i),id:p.slice(i+1)}};
+const snap=(path,data)=>({id:split(path).id,exists:!!data,data:()=>data?JSON.parse(JSON.stringify(data)):undefined,metadata:{fromCache:false,hasPendingWrites:false}});
+async function fetchColl(coll,filters){
+  let q=sb.from(T).select("path,data").eq("coll",coll);
+  filters.forEach(([f,v])=>{q=q.eq("data->>"+f,String(v))});
+  const {data,error}=await q.limit(20000);if(error)throw fail(error);return data||[];
+}
+async function getDoc(path){const {data,error}=await sb.from(T).select("data").eq("path",path).maybeSingle();if(error)throw fail(error);return data?data.data:null}
+function query(coll,filters,order,lim){
+  const api={path:coll,
+    where(f,op,v){if(op!=="==")throw new TypeError("Only == filters are supported");return query(coll,filters.concat([[f,v]]),order,lim)},
+    orderBy(f,d){return query(coll,filters,[f,d||"asc"],lim)},
+    limit(n){return query(coll,filters,order,n)},
+    async get(){
+      let docs=(await fetchColl(coll,filters)).map(r=>snap(r.path,r.data));
+      if(order){const [f,d]=order;docs.sort((a,b)=>{const x=a.data()[f],y=b.data()[f];return (x>y?1:x<y?-1:0)*(d==="desc"?-1:1)})}
+      if(lim)docs=docs.slice(0,lim);
+      return {docs,size:docs.length,empty:!docs.length,docChanges:()=>[],metadata:{fromCache:false,hasPendingWrites:false}};
+    },
+    onSnapshot(next,error){const reg={coll,run:async()=>{try{next(await api.get())}catch(e){error&&error(e)}}};regs.add(reg);reg.run();return ()=>regs.delete(reg)},
+    doc(id){return docRef(coll+"/"+(id||rid()))},
+    async add(data){const r=docRef(coll+"/"+rid());await r.set(data);return r}};
+  return api;
+}
+function docRef(path){
+  const {coll,id}=split(path);
+  return {id,path,
+    async get(){return snap(path,await getDoc(path))},
+    async set(d){const {error}=await sb.from(T).upsert({path,coll,data:d,updated_at:new Date().toISOString(),updated_by:getName()});if(error)throw fail(error);refetch(coll)},
+    async update(d){const cur=await getDoc(path);if(!cur)throw {code:"invalid_argument",message:"That record no longer exists."};
+      const {error}=await sb.from(T).update({data:Object.assign({},cur,d),updated_at:new Date().toISOString(),updated_by:getName()}).eq("path",path);if(error)throw fail(error);refetch(coll)},
+    async delete(){const {error}=await sb.from(T).delete().eq("path",path);if(error)throw fail(error);refetch(coll)},
+    onSnapshot(next,error){const reg={coll,run:async()=>{try{next(snap(path,await getDoc(path)))}catch(e){error&&error(e)}}};regs.add(reg);reg.run();return ()=>regs.delete(reg)},
+    collection(sub){return query(path+"/"+sub,[],null,null)}};
+}
+const db={doc:docRef,collection:c=>query(c,[],null,null)};
+
+/* ---- who is using it: the shared login plus the name each person types ---- */
+const uid=()=>"u:"+getName();
+const user={id:async()=>uid(),can:async()=>true,canEdit:async()=>true,isOwner:async()=>false,
+  me:async()=>({id:uid(),name:getName()}),
+  profiles:async ids=>Object.fromEntries([].concat(ids).map(i=>[i,{id:i,name:String(i).startsWith("u:")?String(i).slice(2):"",avatarUrl:"",color:"",email:null,isMe:i===uid(),guest:false}]))};
+
+/* ---- downloads: an ordinary browser download ---- */
+const downloads={save:async({filename,data})=>{
+  const blob=data instanceof Blob?data:new Blob([data]);const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);return {status:"saved"}}};
+
+window.claude={use:name=>ready.then(()=>({db,user,downloads}[name]||null))};
+
+/* ---- sign-in ---- */
+function signedIn(){
+  gate.hidden=true;bar.hidden=false;document.getElementById("authWho").textContent="Signed in as "+getName();
+  sb.channel("sched-docs").on("postgres_changes",{event:"*",schema:"public",table:T},p=>{const c=(p.new&&p.new.coll)||(p.old&&p.old.coll);if(c)refetch(c)}).subscribe();
+  setInterval(()=>regs.forEach(r=>r.run()),60000); // safety net if live updates drop
+  resolveReady();
+}
+document.addEventListener("DOMContentLoaded",async()=>{
+  const nm=document.getElementById("authName");nm.value=getName();
+  const {data}=await sb.auth.getSession();
+  if(data&&data.session&&getName()){signedIn();return}
+  if(data&&data.session){document.getElementById("authPassWrap").hidden=true;document.getElementById("authPass").required=false}
+  gate.hidden=false;(getName()?document.getElementById("authPass"):nm).focus();
+});
+document.addEventListener("submit",async e=>{
+  if(e.target.id!=="authForm")return;e.preventDefault();
+  const name=document.getElementById("authName").value.trim(),pass=document.getElementById("authPass").value,err=document.getElementById("authErr"),go=document.getElementById("authGo");
+  if(!name){err.textContent="Enter your name so changes show who made them.";return}
+  setName(name);err.textContent="";
+  const {data}=await sb.auth.getSession();
+  if(data&&data.session){signedIn();return}
+  go.disabled=true;go.textContent="Signing in…";
+  const {error}=await sb.auth.signInWithPassword({email:CFG.email,password:pass});
+  go.disabled=false;go.textContent="Sign in";
+  if(error){err.textContent=/invalid/i.test(error.message)?"That password isn’t right.":"Couldn’t sign in: "+error.message;document.getElementById("authPass").select();return}
+  document.getElementById("authPass").value="";signedIn();
+});
+document.addEventListener("click",async e=>{if(e.target.id==="authOut"){await sb.auth.signOut();location.reload()}});
+})();
+</script>

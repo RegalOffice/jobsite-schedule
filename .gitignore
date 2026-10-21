@@ -1,0 +1,3 @@
+# Exported job data and migration scripts contain real project and billing figures. Never commit them.
+migration/
+*.local.*
