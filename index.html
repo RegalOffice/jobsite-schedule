@@ -613,7 +613,7 @@ function renderToolbar(){
 }
 function renderMain(){
   const m=$("main");
-  if(S.status==="nodb"){m.innerHTML='<div class="panel empty"><h2>Schedule storage isn’t available here</h2><p>Couldnâ€™t reach the schedule database. Check your connection and reload the page.</p></div>';return}
+  if(S.status==="nodb"){m.innerHTML='<div class="panel empty"><h2>The schedule database isn’t responding</h2><p>Couldn’t reach the schedule database. Check your connection and reload the page.</p>'+(S.dbError?'<p class="hint mono">'+esc(S.dbError)+"</p>":"")+"</div>";return}
   if(S.status==="loading"){m.innerHTML='<div class="panel empty"><p>Loading schedules…</p></div>';return}
   if(!project()){
     m.innerHTML='<div class="panel empty"><h2>No projects yet</h2><p>Create a project, then add phases (for example “Rough carpentry, Mar 2 for 4 weeks”), tasks under each phase with the subcontractor and their committed on-site dates, and milestones like tile delivery or inspections.</p>'+
@@ -1583,7 +1583,7 @@ const PDF_SRC=["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min
 function loadScriptOnce(src){return new Promise((res,rej)=>{const ex=document.querySelector('script[data-src="'+src+'"]');if(ex&&ex.dataset.ok)return res();const s=document.createElement("script");s.src=src;s.dataset.src=src;s.onload=()=>{s.dataset.ok="1";res()};s.onerror=()=>rej(new Error("Couldn't load the PDF maker."));document.head.appendChild(s)})}
 async function loadPDF(){if(window.jspdf&&window.jspdf.jsPDF&&window.jspdf.jsPDF.API.autoTable)return;for(const s of PDF_SRC)await loadScriptOnce(s)}
 async function saveFile(filename,data){
-  if(!DL){toast("Saving files isn’t available in this view. Open the board on claude.ai.");return}
+  if(!DL){toast("Couldn’t start the download.");return}
   try{await DL.save({filename,data})}catch(e){const c=e&&e.code;if(c==="declined")return;toast(c==="rate_limited"?"A save prompt is already open.":"Couldn't save the file.");console.error(e)}
 }
 const xDate=n=>{if(n==null)return "";const d=new Date(n*DAY);return new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())};
@@ -2156,7 +2156,7 @@ async function init(){
     if(!S.projects.find(p=>p.id===S.pid))selectProject(S.projects[0]?S.projects[0].id:null);
     else if(!unItems)selectProject(S.pid);
     else render();
-  },e=>{console.error(e);S.status="nodb";render()});
+  },e=>{console.error(e);S.status="nodb";S.dbError=e&&e.message?e.message:"";render()});
 }
 
 /* ---------- events ---------- */

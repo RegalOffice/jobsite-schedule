@@ -5,10 +5,13 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $app = [IO.File]::ReadAllText("$here\src\app.html")
 $platform = [IO.File]::ReadAllText("$here\src\platform.html")
 
-# Wording that only made sense inside claude.ai
-$app = $app.Replace("Open this page on claude.ai while signed in to view and edit the shared job schedules.", "Couldn’t reach the schedule database. Check your connection and reload the page.")
-$app = $app.Replace("Schedule storage isn’t available here", "The schedule database isn’t responding")
-$app = $app.Replace("Saving files isn’t available in this view. Open the board on claude.ai.", "Couldn’t start the download.")
+# Wording that only made sense inside claude.ai. (Windows PowerShell reads this script as ANSI, so the
+# curly apostrophe is written as [char]0x2019 rather than typed.)
+$q = [char]0x2019
+$app = $app.Replace("Open this page on claude.ai while signed in to view and edit the shared job schedules.", "Couldn${q}t reach the schedule database. Check your connection and reload the page.")
+$app = $app.Replace("Schedule storage isn${q}t available here", "The schedule database isn${q}t responding")
+$app = $app.Replace("Saving files isn${q}t available in this view. Open the board on claude.ai.", "Couldn${q}t start the download.")
+$app = $app.Replace("Open the board on claude.ai.", "")
 
 $head = @"
 <!doctype html>

@@ -472,7 +472,7 @@ function renderToolbar(){
 }
 function renderMain(){
   const m=$("main");
-  if(S.status==="nodb"){m.innerHTML='<div class="panel empty"><h2>Schedule storage isn’t available here</h2><p>Open this page on claude.ai while signed in to view and edit the shared job schedules.</p></div>';return}
+  if(S.status==="nodb"){m.innerHTML='<div class="panel empty"><h2>Schedule storage isn’t available here</h2><p>Open this page on claude.ai while signed in to view and edit the shared job schedules.</p>'+(S.dbError?'<p class="hint mono">'+esc(S.dbError)+"</p>":"")+"</div>";return}
   if(S.status==="loading"){m.innerHTML='<div class="panel empty"><p>Loading schedules…</p></div>';return}
   if(!project()){
     m.innerHTML='<div class="panel empty"><h2>No projects yet</h2><p>Create a project, then add phases (for example “Rough carpentry, Mar 2 for 4 weeks”), tasks under each phase with the subcontractor and their committed on-site dates, and milestones like tile delivery or inspections.</p>'+
@@ -2015,7 +2015,7 @@ async function init(){
     if(!S.projects.find(p=>p.id===S.pid))selectProject(S.projects[0]?S.projects[0].id:null);
     else if(!unItems)selectProject(S.pid);
     else render();
-  },e=>{console.error(e);S.status="nodb";render()});
+  },e=>{console.error(e);S.status="nodb";S.dbError=e&&e.message?e.message:"";render()});
 }
 
 /* ---------- events ---------- */
