@@ -12,6 +12,10 @@ create table if not exists public.sched_docs (
 create index if not exists sched_docs_coll_idx    on public.sched_docs (coll);
 create index if not exists sched_docs_project_idx on public.sched_docs ((data->>'projectId'));
 
+-- signed-in users only (this project doesn't grant new tables to API roles automatically)
+grant select, insert, update, delete on public.sched_docs to authenticated;
+revoke all on public.sched_docs from anon;
+
 alter table public.sched_docs enable row level security;
 
 drop policy if exists "signed-in read"   on public.sched_docs;
