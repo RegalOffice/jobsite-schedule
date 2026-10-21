@@ -437,7 +437,7 @@ tfoot td{font-weight:600;border-top:1px solid var(--line);border-bottom:0}
 <div id="ctip" class="ctip" hidden></div>
 <input type="file" id="fileBudget" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt" hidden>
 <input type="file" id="fileProjects" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt" multiple hidden>
-<input type="file" id="fileMsp" accept=".xml,.xlsx,.xls,.csv,.tsv,.txt" hidden>
+<input type="file" id="fileMsp" accept=".pdf,.xml,.xlsx,.xls,.csv,.tsv,.txt" hidden>
 <input type="file" id="fileCosts" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt" hidden>
 
 <script>
@@ -591,7 +591,7 @@ function renderToolbar(){
     else if(S.view==="history"){}
     else if(S.view==="calendar")h+='<button class="btn primary" type="button" data-act="new" data-kind="task">+ Task</button><button class="btn" type="button" data-act="newEntry" data-kind="deadline">+ Deadline</button><button class="btn" type="button" data-act="newEntry" data-kind="note">+ Note</button>';
     else h+='<button class="btn primary" type="button" data-act="new" data-kind="phase">+ Phase</button><button class="btn" type="button" data-act="new" data-kind="task">+ Task</button><button class="btn" type="button" data-act="new" data-kind="milestone">+ Milestone / delivery</button>'+(S.view==="gantt"?'<button class="btn" type="button" data-act="newEntry" data-kind="deadline">+ Deadline</button><button class="btn" type="button" data-act="newEntry" data-kind="note">+ Note</button>':"");
-    if(S.view==="gantt"||S.view==="list")h+='<button class="btn" type="button" data-act="progress" title="Move unfinished work that should already have happened to the status date">Update progress</button><button class="btn" type="button" data-act="mspImport" title="Microsoft Project XML, or an Excel/CSV export">Import from Project</button>';
+    if(S.view==="gantt"||S.view==="list")h+='<button class="btn" type="button" data-act="progress" title="Move unfinished work that should already have happened to the status date">Update progress</button><button class="btn" type="button" data-act="mspImport" title="A schedule PDF (e.g. printed from Microsoft Project), Project XML, or an Excel/CSV export">Import schedule</button>';
   }
   h+='<span class="spacer"></span>';
   if(S.view==="gantt"||S.view==="list")h+='<label class="chk" title="Tasks with no float: any slip moves the finish date"><input type="checkbox" id="showCrit"'+(S.showCrit?" checked":"")+"> Critical path</label>";
@@ -1513,6 +1513,8 @@ function mspImportForm(d){
   h+='<div class="base-box"><span><strong>'+plural(n.phase,"phase")+", "+plural(n.task,"task")+", "+plural(n.milestone,"milestone")+"</strong> · "+plural(links,"link")+"</span></div>";
   h+='<div class="prev"><table><thead><tr><th>Item</th><th>Start</th><th>Finish</th><th>Depends on</th></tr></thead><tbody>'+plan.slice(0,60).map(p=>{const b=p.body;return "<tr><td"+(b.kind==="phase"?' style="font-weight:700"':' style="padding-left:'+(8+12*Math.min(3,p.outline-1))+'px"')+">"+(b.kind==="milestone"?"◆ ":"")+esc(b.name)+'</td><td class="mono">'+(b.start?fmt(dn(b.start)):"")+'</td><td class="mono">'+(b.end?fmt(dn(b.end)):"")+'</td><td class="hint">'+esc(b.preds.map(x=>{const id=typeof x==="string"?x:x.id;const q=plan.find(z=>z.id===id);return q?q.body.name+(typeof x==="string"?"":" ("+x.type+(x.lag?(x.lag>0?"+":"")+x.lag+"d":"")+")"):""}).join(", "))+"</td></tr>"}).join("")+(plan.length>60?'<tr><td colspan="4" class="dim">…and '+(plan.length-60)+" more</td></tr>":"")+"</tbody></table></div>";
   h+='<div class="lab">How to bring it in</div><div class="radio"><label><input type="radio" name="msp_mode" value="add" checked> Add to this project’s schedule</label><label><input type="radio" name="msp_mode" value="replace"> Replace this project’s schedule ('+plural(S.items.length,"current item")+' will be deleted)</label></div>';
+  if(!n.phase)h+='<div class="fld"><label for="msp_phase">Group these under a new phase (optional)</label><input type="text" id="msp_phase" placeholder="e.g. 10/7 timeline"></div>';
+  if(d.fromPdf)h+='<div class="callout" style="margin:0">Read from a PDF: check the dates above against the PDF before importing. Where the PDF shows only a duration, the finish is counted in this project’s work days.</div>';
   h+='<p class="hint" style="margin:0">Imported dates become each item’s baseline. Budget lines tied to replaced tasks fall back to “spread over whole project” until you run Re-run auto-match on the Billing tab.</p>';
   return h+'</div><div class="df"><span></span><span class="inl"><button type="button" class="btn" data-act="close">Cancel</button><button type="button" class="btn primary" data-act="applyMsp">Import '+plural(plan.length,"item")+"</button></span></div>";
 }
@@ -1520,19 +1522,77 @@ async function applyMsp(){
   const d=S.drawer;const mode=(document.querySelector('input[name="msp_mode"]:checked')||{}).value||"add";
   try{
     if(mode==="replace"){for(const i of S.items)await S.db.doc("items/"+i.id).delete();for(const e of S.entries)if(e.itemId)await S.db.doc("entries/"+e.id).update({itemId:""})}
-    for(const p of d.plan)await S.db.doc("items/"+p.id).set(p.body);
+    const ph=val("msp_phase");let phaseId="";
+    if(ph){phaseId=S.db.collection("items").doc().id;await S.db.doc("items/"+phaseId).set({projectId:S.pid,kind:"phase",name:ph,phaseId:"",start:null,end:null,baseStart:null,baseEnd:null,status:"Not started",pct:0,preds:[],notes:"Imported from "+d.fileName,createdAt:Date.now()})}
+    for(const p of d.plan)await S.db.doc("items/"+p.id).set(phaseId&&p.body.kind!=="phase"&&!p.body.phaseId?Object.assign({},p.body,{phaseId}):p.body);
     await logHistory("import",(mode==="replace"?"Replaced the schedule with ":"Imported ")+plural(d.plan.length,"item")+" from "+d.fileName,[]);
     closeDrawer();toast("Imported "+plural(d.plan.length,"item"));
   }catch(e){dbErr(e)}
+}
+
+/* ---------- import a schedule from a PDF (e.g. printed from Microsoft Project) ---------- */
+// Reads the task table: rows under a header with Task Name and Start, plus whichever of ID, Duration,
+// Finish and Predecessors are there. Text in the Gantt-chart area to the right is ignored.
+const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+async function loadPdfJs(){if(window.pdfjsLib)return;await loadScriptOnce(PDFJS+"pdf.min.js");window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js"}
+const pdfDay=v=>parseDay(String(v||"").trim().replace(/^[A-Za-z]{3,9}\.?,?\s+/,"").replace(/\s+\d{1,2}:\d{2}.*$/,""));
+function pdfDuration(s){ // "5 days", "2 wks", "4 edays", "0 days?" → {days, cal}
+  const m=String(s||"").match(/([\d.]+)\s*(e?)(mins?|m|hrs?|h|days?|d|wks?|w|weeks?|mons?|mo|months?)?\b/i);if(!m)return null;
+  const v=Number(m[1]),e=!!m[2],u=(m[3]||"d").toLowerCase();
+  const days=u.startsWith("w")?v*(e?7:5):u.startsWith("mo")?v*(e?30:20):u.startsWith("h")?v/8:u.startsWith("m")&&!u.startsWith("mo")?v/480:v;
+  return {days,cal:e};
+}
+async function parsePdfSchedule(file){
+  await loadPdfJs();
+  const doc=await window.pdfjsLib.getDocument({data:await file.arrayBuffer(),disableWorker:true}).promise;
+  const KNOWN=[["id",/^(id|#)$/i],["name",/^(task )?name$/i],["dur",/^duration$/i],["start",/^start( date)?$/i],["finish",/^(finish|end)( date)?$/i],["pred",/^predecessors?$/i],["pct",/^% ?complete$/i]];
+  const raw=[];let textFound=false;
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);const vp=page.getViewport({scale:1});const tc=await page.getTextContent();
+    const items=tc.items.filter(t=>t.str&&t.str.trim()).map(t=>({s:t.str.trim(),x:t.transform[4],y:vp.height-t.transform[5]}));
+    if(items.length)textFound=true;
+    items.sort((a,b)=>a.y-b.y||a.x-b.x);
+    const rows=[];for(const t of items){const r=rows.find(r=>Math.abs(r.y-t.y)<=3);if(r)r.c.push(t);else rows.push({y:t.y,c:[t]})}
+    rows.forEach(r=>r.c.sort((a,b)=>a.x-b.x));
+    const hi=rows.findIndex(r=>r.c.some(c=>/^(task )?name$/i.test(c.s))&&r.c.some(c=>/^start/i.test(c.s)));
+    if(hi<0)continue;
+    const hdr=rows[hi].c,cols=[];
+    hdr.forEach(c=>{const k=KNOWN.find(([,re])=>re.test(c.s));if(k&&!cols.some(x=>x.k===k[0]))cols.push({k:k[0],x:c.x})});
+    cols.sort((a,b)=>a.x-b.x);
+    const lastX=Math.max(...cols.map(c=>c.x));
+    // where the Gantt chart's timescale starts: the first header text right of the table that isn't a column name
+    const timeX=Math.min(...hdr.filter(c=>c.x>lastX&&!KNOWN.some(([,re])=>re.test(c.s))).map(c=>c.x).concat([Infinity]));
+    const colOf=x=>{let best=null;for(const c of cols)if(x>=c.x-8)best=c;return best};
+    for(const r of rows.slice(hi+1)){
+      const cells={};let nameX=null;
+      for(const c of r.c){if(c.x>=timeX-2)continue;let col=colOf(c.x);
+        if(!col&&/^\d+$/.test(c.s))col={k:"id"}; // row numbers left of the first header
+        if(!col)continue;if(col.k==="name"&&nameX==null)nameX=c.x;cells[col.k]=(cells[col.k]?cells[col.k]+" ":"")+c.s}
+      if(!cells.name||!cells.start)continue;
+      const start=pdfDay(cells.start);if(start==null)continue;
+      raw.push({cells,start,nameX,page:p});
+    }
+  }
+  if(!raw.length)throw new Error(textFound?"Couldn’t find a schedule table in that PDF. It needs Task Name and Start columns, like a Gantt chart printed from Microsoft Project.":"That PDF has no readable text (it may be a scan). Save the schedule from Project as a PDF, XML or Excel file instead.");
+  // indentation gives the outline: each distinct left edge of the task name is one level deeper
+  const edges=[...new Set(raw.map(r=>Math.round((r.nameX||0)/4)*4))].sort((a,b)=>a-b);
+  const tasks=raw.map((r,i)=>{const c=r.cells;const d=pdfDuration(c.dur);const fin=c.finish?pdfDay(c.finish):null;
+    let finish=fin;if(finish==null&&d)finish=d.days<=0?r.start:(d.cal?r.start+Math.ceil(d.days)-1:addWorkdays(r.start,Math.ceil(d.days)-1));
+    return {ref:c.id&&/^\d+$/.test(c.id.split(" ")[0])?c.id.split(" ")[0]:String(i+1),name:c.name,start:r.start,finish:finish!=null?finish:r.start,
+      outline:edges.indexOf(Math.round((r.nameX||0)/4)*4)+1,summary:false,milestone:!!(d&&d.days===0),pct:c.pct?num(c.pct)||0:0,calDays:!!(d&&d.cal),
+      links:c.pred?parsePredText(c.pred):[],notes:"From "+file.name+(c.dur?" · "+c.dur:"")}});
+  tasks.forEach((t,i)=>{const n=tasks[i+1];if(n&&n.outline>t.outline)t.summary=true});
+  return tasks;
 }
 
 async function onMspFile(input){
   const file=input.files&&input.files[0];input.value="";if(!file)return;
   try{
     toast("Reading "+file.name+"…");
-    const tasks=/\.xml$/i.test(file.name)?parseMSPXml(await file.text()):parseMSPRows(await readSheets(file));
-    $("drawer").dataset.sig="";openDrawer({type:"msp",fileName:file.name,plan:importPlan(tasks)});
-  }catch(e){console.error(e);toast(e&&e.message&&!/^[A-Z][a-z]+Error/.test(e.message)?e.message:"Couldn't read that file. Save it from Project as XML, or export to Excel.")}
+    const isPdf=/\.pdf$/i.test(file.name);
+    const tasks=isPdf?await parsePdfSchedule(file):/\.xml$/i.test(file.name)?parseMSPXml(await file.text()):parseMSPRows(await readSheets(file));
+    $("drawer").dataset.sig="";openDrawer({type:"msp",fileName:file.name,plan:importPlan(tasks),fromPdf:isPdf});
+  }catch(e){console.error(e);toast(e&&e.message&&!/^[A-Z][a-z]+Error/.test(e.message)?e.message:"Couldn't read that file. Use a PDF, XML or Excel file from Microsoft Project.")}
 }
 
 /* ---------- actual costs (QuickBooks or any expense export) ---------- */
