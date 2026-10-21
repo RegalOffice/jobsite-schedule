@@ -49,7 +49,9 @@ if(!window.supabase||!CFG.url||!CFG.anonKey){ // not configured: tell whoever de
   document.addEventListener("DOMContentLoaded",()=>{gate.hidden=false;document.getElementById("authErr").textContent="This site isn’t connected to its database yet. Fill in config.js (see README).";document.getElementById("authGo").disabled=true});
   window.claude={use:()=>Promise.resolve(null)};return;
 }
-const sb=window.supabase.createClient(CFG.url,CFG.anonKey,{auth:{persistSession:true,autoRefreshToken:true,storageKey:"jsb-auth"}});
+// The sign-in lives in sessionStorage: it lasts while the tab is open, and closing the tab or browser signs out.
+try{localStorage.removeItem("jsb-auth")}catch(e){} // clear sign-ins remembered by earlier versions
+const sb=window.supabase.createClient(CFG.url,CFG.anonKey,{auth:{persistSession:true,autoRefreshToken:true,storageKey:"jsb-auth",storage:window.sessionStorage}});
 const T="sched_docs";
 
 /* ---- document store (collections of JSON documents, keyed "collection/id") ---- */
