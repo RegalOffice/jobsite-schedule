@@ -312,7 +312,7 @@ const dn=s=>{if(!s||typeof s!=="string")return null;const t=Date.parse(s+"T00:00
 const ds=n=>new Date(n*DAY).toISOString().slice(0,10);
 const TODAY=(()=>{const d=new Date();return Math.round(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/DAY)})();
 const dow=n=>new Date(n*DAY).getUTCDay();
-const monday=n=>n-((dow(n)+6)%7);
+const sunday=n=>n-dow(n);
 const fmt=(n,o)=>n==null?"—":new Date(n*DAY).toLocaleDateString(undefined,Object.assign({month:"short",day:"numeric",timeZone:"UTC"},o||{}));
 const fmtY=n=>fmt(n,{year:"numeric"});
 const fmtW=n=>fmt(n,{weekday:"short"});
@@ -385,7 +385,7 @@ function summary(){
   let tw=0,dw=0;pool.forEach(i=>{const {s,e}=spanOf(i);const w=(s!=null&&e!=null)?Math.max(1,e-s+1):1;tw+=w;dw+=w*(i.status==="Complete"?100:Math.min(100,Math.max(0,Number(i.pct)||0)))/100});
   const infos=its.map(i=>[i,info(i)]);
   const late=infos.filter(([i,x])=>x.late).length,slipped=infos.filter(([i,x])=>x.slip>0).length,unexp=infos.filter(([i,x])=>x.unexplained>0).length;
-  const wk0=monday(TODAY),wk1=wk0+6;let onsite=0;const subs=new Set();
+  const wk0=sunday(TODAY),wk1=wk0+6;let onsite=0;const subs=new Set();
   its.forEach(i=>(i.onsite||[]).forEach(d=>{const n=dn(d);if(n!=null&&n>=wk0&&n<=wk1){onsite++;subs.add(i.sub||i.name)}}));
   const ddays=S.delays.reduce((a,d)=>a+(Number(d.days)||0),0);
   return {fin,bfin,st,pct:tw?Math.round(dw/tw*100):0,late,slipped,unexp,onsiteSubs:subs.size,onsite,ddays,dcount:S.delays.length};
@@ -499,7 +499,7 @@ function ganttRange(){
   const ns=[TODAY];
   S.items.forEach(i=>{const x=info(i);[x.s,x.e,x.bs,x.be].forEach(v=>{if(v!=null)ns.push(v)});(i.onsite||[]).forEach(d=>{const v=dn(d);if(v!=null)ns.push(v)})});
   S.entries.forEach(e=>{const v=dn(e.date);if(v!=null)ns.push(v)});
-  let a=Math.min(...ns)-7,b=Math.max(...ns)+21;a=monday(a);
+  let a=Math.min(...ns)-7,b=Math.max(...ns)+21;a=sunday(a);
   return {a,b};
 }
 function ganttHTML(){
@@ -511,14 +511,14 @@ function ganttHTML(){
     const d=new Date(n*DAY);
     if(d.getUTCDate()===1||n===a){const lab=d.toLocaleDateString(undefined,{month:S.zoom==="month"?"short":"long",year:(d.getUTCMonth()===0||n===a)?"numeric":undefined,timeZone:"UTC"});hd+='<div class="mlab" style="left:'+(n-a)*dw+'px">'+esc(lab)+"</div>"}
     if(S.zoom==="day")hd+='<div class="tlab" style="left:'+(n-a)*dw+'px;width:'+dw+'px">'+d.getUTCDate()+"</div>";
-    else if(S.zoom==="week"&&dow(n)===1)hd+='<div class="tlab" style="left:'+(n-a)*dw+'px;width:'+(7*dw)+'px;text-align:left;padding-left:3px">'+d.getUTCDate()+"</div>";
+    else if(S.zoom==="week"&&dow(n)===0)hd+='<div class="tlab" style="left:'+(n-a)*dw+'px;width:'+(7*dw)+'px;text-align:left;padding-left:3px">'+d.getUTCDate()+"</div>";
   }
   const tx=(TODAY-a)*dw+dw/2;
   hd+='<div class="today-lab" style="left:'+tx+'px">Today</div>';
   // track background: weekend shading (day/week zoom) + weekly grid line
   const bg=S.zoom==="month"
     ? "background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px);background-size:"+(7*dw)+"px 100%"
-    : "background-image:linear-gradient(to right,var(--grid) 1px,transparent 1px,transparent "+(5*dw)+"px,var(--wknd) "+(5*dw)+"px,var(--wknd) "+(7*dw)+"px);background-size:"+(7*dw)+"px 100%";
+    : "background-image:linear-gradient(to right,var(--grid) 1px,var(--wknd) 1px,var(--wknd) "+dw+"px,transparent "+dw+"px,transparent "+(6*dw)+"px,var(--wknd) "+(6*dw)+"px,var(--wknd) "+(7*dw)+"px);background-size:"+(7*dw)+"px 100%";
   let rows="",yTop=0;const pos=new Map();
   const rs=orderedRows(true);const byIdAll=new Map(S.items.map(i=>[i.id,i]));
   // deadline flags and note markers
@@ -559,7 +559,7 @@ function ganttHTML(){
     const cf=conflictOf(it,byIdAll);if(cf)lab+='<span class="flag bad" title="Starts '+plural(cf.days,"working day")+' before its links allow (earliest '+esc(fmt(cf.earliest))+')'+(it.cons&&it.cons.type==="MSO"?". Its start date is pinned.":"")+'">link</span>';
     if(it.lockOnsite&&onsiteOutside(it).length)lab+='<span class="flag warn" title="Locked sub on-site dates fall outside this task’s dates">sub dates</span>';
     (it.onsite||[]).forEach(d=>{const n=dn(d);if(n==null)return;tr+='<div class="os" style="left:'+((n-a)*dw+1)+"px;width:"+Math.max(3,dw-2)+'px" title="'+esc((it.sub||it.name)+" on site "+fmtW(n)+" "+fmt(n))+'"></div>'});
-    rows+='<div class="grow '+cls+'" data-open="'+esc(it.id)+'" tabindex="0"><div class="glabel">'+lab+'</div><div class="gtrack" style="width:'+W+"px;"+bg+";background-position:"+(((a-monday(a))%7)*dw)+'px 0">'+tr+"</div></div>";
+    rows+='<div class="grow '+cls+'" data-open="'+esc(it.id)+'" tabindex="0"><div class="glabel">'+lab+'</div><div class="gtrack" style="width:'+W+"px;"+bg+";background-position:"+(((a-sunday(a))%7)*dw)+'px 0">'+tr+"</div></div>";
   }
   if(!rs.length)rows='<div class="empty"><p>No items match the current filter.</p></div>';
   // link arrows between visible rows: FS end→start, SS start→start, FF end→end
@@ -634,7 +634,7 @@ async function resolveNames(){
 
 /* ---------- look-ahead ---------- */
 function aheadHTML(){
-  const a=monday(TODAY);const nW=S.ahead;
+  const a=sunday(TODAY);const nW=S.ahead;
   const byDay={};const add=(n,html)=>{(byDay[n]=byDay[n]||[]).push(html)};
   for(const it of S.items){
     const x=info(it);
@@ -652,7 +652,7 @@ function aheadHTML(){
     h+='<div class="wk"><h3>Week of '+fmt(w0)+(w===0?' <span class="dim" style="font-weight:500;font-size:15px">· this week</span>':"")+'</h3><div class="days">';
     for(let d=0;d<7;d++){
       const n=w0+d;const items=(byDay[n]||[]).sort((p,q)=>p.o-q.o);
-      h+='<div class="day'+(d>=5?" we":"")+(n===TODAY?" td":"")+(items.length?"":" emptyday")+'"><div class="dn">'+fmtW(n)+" "+fmt(n)+"</div>"+items.map(i=>i.h).join("")+"</div>";
+      h+='<div class="day'+(d===0||d===6?" we":"")+(n===TODAY?" td":"")+(items.length?"":" emptyday")+'"><div class="dn">'+fmtW(n)+" "+fmt(n)+"</div>"+items.map(i=>i.h).join("")+"</div>";
     }
     h+="</div></div>";
   }
@@ -679,9 +679,9 @@ const entriesOn=n=>S.entries.filter(e=>dn(e.date)===n).sort((a,b)=>(a.kind===b.k
 function calendarHTML(){
   const mk=S.calMonth||monthKey(TODAY);const [y,m]=mk.split("-").map(Number);
   const first=Math.round(Date.UTC(y,m-1,1)/DAY),last=Math.round(Date.UTC(y,m,0)/DAY);
-  const g0=monday(first),g1=monday(last)+6;
+  const g0=sunday(first),g1=sunday(last)+6;
   const bars=S.items.filter(i=>i.kind==="task"||(S.calPhases&&i.kind==="phase"));
-  let h='<div class="panel"><h2 class="ph-h">'+esc(keyLabel(mk,true))+'<span class="hint" style="font-family:var(--f-body);font-weight:500">Click a day to see everything on it or add a task, deadline or note</span></h2><div class="calwrap"><div class="cal"><div class="cal-head">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>"<div>"+d+"</div>").join("")+"</div>";
+  let h='<div class="panel"><h2 class="ph-h">'+esc(keyLabel(mk,true))+'<span class="hint" style="font-family:var(--f-body);font-weight:500">Click a day to see everything on it or add a task, deadline or note</span></h2><div class="calwrap"><div class="cal"><div class="cal-head">'+["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>"<div>"+d+"</div>").join("")+"</div>";
   for(let w=g0;w<=g1;w+=7){
     // lay task bars into lanes for this week
     const segs=[];
@@ -697,7 +697,7 @@ function calendarHTML(){
         if(it.kind==="milestone"&&dn(it.start)===n)chips+='<button type="button" class="chip ms" data-open="'+esc(it.id)+'">◆ '+esc(it.name)+"</button>";
         if((it.onsite||[]).includes(ds(n)))chips+='<button type="button" class="chip on" data-open="'+esc(it.id)+'" title="'+esc(it.name)+'">On site: '+esc(it.sub||it.name)+"</button>";
       });
-      h+='<div class="cal-day'+(n<first||n>last?" out":"")+(d>=5?" we":"")+(CAL.hol.has(n)?" holday":"")+(n===TODAY?" td":"")+'" data-calday="'+ds(n)+'"><span class="cal-dn">'+(date.getUTCDate()===1?fmt(n):date.getUTCDate())+'</span><div class="cal-lanes" style="height:'+(lanes.length*22)+'px"></div>'+chips+"</div>";
+      h+='<div class="cal-day'+(n<first||n>last?" out":"")+(d===0||d===6?" we":"")+(CAL.hol.has(n)?" holday":"")+(n===TODAY?" td":"")+'" data-calday="'+ds(n)+'"><span class="cal-dn">'+(date.getUTCDate()===1?fmt(n):date.getUTCDate())+'</span><div class="cal-lanes" style="height:'+(lanes.length*22)+'px"></div>'+chips+"</div>";
     }
     segs.forEach(sg=>{const it=sg.it,x=info(it);
       h+='<button type="button" class="cal-bar '+stClass(it)+(x.late?" late":"")+(it.kind==="phase"?" ph":"")+'" data-open="'+esc(it.id)+'" style="top:'+(28+sg.l*22)+"px;left:calc("+(sg.a/7*100).toFixed(4)+"% + 3px);width:calc("+((sg.b-sg.a+1)/7*100).toFixed(4)+'% - 6px)" title="'+esc(it.name+(it.sub?" · "+it.sub:"")+" — "+fmt(x.s)+" to "+fmt(x.e))+'">'+(sg.cl?"‹ ":"")+esc(it.name)+(it.sub?' <span class="dim">· '+esc(it.sub)+"</span>":"")+(sg.cr?" ›":"")+"</button>"});
@@ -896,7 +896,7 @@ const US_HOLIDAYS=[["2026-01-01","New Year’s Day"],["2026-05-25","Memorial Day
 function calendarSection(v,dis){
   const c=v.calendar||{};const days=new Set(Array.isArray(c.days)&&c.days.length?c.days:[1,2,3,4,5]);
   return '<div class="sect"><h3>Work calendar</h3><p class="hint" style="margin:0">Durations, links and delays count only these days. Tasks marked “count calendar days” (cure, dry time) ignore it. Changing it doesn’t move anything until a task is next saved or you run Update progress.</p>'+
-    '<div class="chk-row">'+[1,2,3,4,5,6,0].map(k=>'<label class="chk"><input type="checkbox" id="cal_d'+k+'"'+(days.has(k)?" checked":"")+dis+"> "+DAY_TXT[k]+"</label>").join("")+"</div>"+
+    '<div class="chk-row">'+[0,1,2,3,4,5,6].map(k=>'<label class="chk"><input type="checkbox" id="cal_d'+k+'"'+(days.has(k)?" checked":"")+dis+"> "+DAY_TXT[k]+"</label>").join("")+"</div>"+
     '<div class="lab">Holidays and non-work days</div><div class="dates" id="holList"></div>'+(dis?"":'<div class="inl"><label class="sr" for="hol_d">Holiday date</label><input type="date" id="hol_d"><label class="sr" for="hol_n">Holiday name</label><input type="text" id="hol_n" placeholder="Name, e.g. Patriots’ Day" style="max-width:200px"><button type="button" class="btn sm" data-act="holAdd">Add</button><button type="button" class="btn sm ghost" data-act="holUS">Add US holidays 2026–27</button></div>')+"</div>";
 }
 function renderHolidays(){
@@ -1524,7 +1524,7 @@ function exportData(view){
     return out};
   if(view==="calendar"){const mk=S.calMonth||monthKey(TODAY);const [y,m]=mk.split("-").map(Number);const f=Math.round(Date.UTC(y,m-1,1)/DAY),l=Math.round(Date.UTC(y,m,0)/DAY);
     return {title:"Calendar "+keyLabel(mk,true),calGrid:{first:f,last:l},sheets:[{name:"Calendar "+keyLabel(mk),head:["Date","Type","What","Details"],rows:dayRows(f,l)}]}}
-  if(view==="ahead"){const a=monday(TODAY);return {title:S.ahead+"-week look-ahead",sheets:[{name:"Look-ahead",head:["Date","Type","What","Details"],rows:dayRows(a,a+S.ahead*7-1)}]}}
+  if(view==="ahead"){const a=sunday(TODAY);return {title:S.ahead+"-week look-ahead",sheets:[{name:"Look-ahead",head:["Date","Type","What","Details"],rows:dayRows(a,a+S.ahead*7-1)}]}}
   if(view==="delays"){const ds_=S.delays.slice().sort((x,y)=>(dn(y.date)||0)-(dn(x.date)||0));const by={};ds_.forEach(d=>by[d.cause||"Other"]=(by[d.cause||"Other"]||0)+(Number(d.days)||0));
     return {title:"Delay log",sheets:[{name:"Delay log",head:["Date","Item","Cause","Working days","What happened","Logged by"],rows:ds_.map(d=>{const it=byId.get(d.itemId);return [xDate(dn(d.date)),it?it.name:(d.itemName||""),d.cause||"",Number(d.days)||0,d.explanation||"",nameOf(d.loggedBy)]})},{name:"Days by cause",head:["Cause","Working days"],rows:Object.entries(by).sort((x,y)=>y[1]-x[1])}]}}
   if(view==="billing"){const bc=S.billCache||{rowsData:[],ret:0};const lines=budgetLines();
@@ -1599,13 +1599,13 @@ function drawGanttPDF(doc,y0){
 }
 function drawCalendarPDF(doc,y0,g){
   const PW=doc.internal.pageSize.getWidth(),PH=doc.internal.pageSize.getHeight();
-  const g0=monday(g.first),g1=monday(g.last)+6,weeks=(g1-g0+1)/7;const L=36,R=PW-36,cw=(R-L)/7;
-  doc.setFontSize(7);doc.setTextColor(91,102,112);["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach((d,i)=>doc.text(d,L+i*cw+3,y0+8));
+  const g0=sunday(g.first),g1=sunday(g.last)+6,weeks=(g1-g0+1)/7;const L=36,R=PW-36,cw=(R-L)/7;
+  doc.setFontSize(7);doc.setTextColor(91,102,112);["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].forEach((d,i)=>doc.text(d,L+i*cw+3,y0+8));
   const top=y0+12,ch=(PH-30-top)/weeks;const byId=new Map(S.items.map(i=>[i.id,i]));
   doc.setDrawColor(211,217,222);doc.setLineWidth(0.4);
   for(let w=0;w<weeks;w++)for(let d=0;d<7;d++){
     const n=g0+w*7+d,x=L+d*cw,y=top+w*ch;
-    if(d>=5||CAL.hol.has(n)){doc.setFillColor(242,244,246);doc.rect(x,y,cw,ch,"F")}
+    if(d===0||d===6||CAL.hol.has(n)){doc.setFillColor(242,244,246);doc.rect(x,y,cw,ch,"F")}
     doc.rect(x,y,cw,ch);
     doc.setFontSize(7.5);doc.setTextColor(n<g.first||n>g.last?170:27);doc.setFont("helvetica",n===TODAY?"bold":"normal");doc.text(String(new Date(n*DAY).getUTCDate()),x+3,y+9);
     const lines=[];
@@ -2000,7 +2000,7 @@ async function onFile(input,kind){
 
 /* ---------- sample project (only on explicit click) ---------- */
 async function loadSample(){
-  const db=S.db;const t0=monday(TODAY)-35;const D=n=>ds(t0+n);
+  const db=S.db;const t0=sunday(TODAY)-34;const D=n=>ds(t0+n);
   try{
     const pref=await db.collection("projects").add({name:"Sample — Kitchen & Primary Bath Remodel",number:"EX-0001",client:"Example client",address:"Example address",super:"Example super",targetFinish:D(110),contractValue:215000,retainagePct:10,startDate:D(0),endDate:D(109),notes:"Example data to explore the tool. Delete it from Project details when you’re done.",createdAt:Date.now(),...stamp()});
     const pid=pref.id;selectProject(pid);
