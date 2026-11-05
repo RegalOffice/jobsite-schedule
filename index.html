@@ -379,6 +379,9 @@ td.num,th.num{text-align:right}
 .cal-bar.st-hold{border-left-color:var(--warn);background:color-mix(in srgb,var(--warn) 20%,var(--panel))}
 .cal-bar.late{box-shadow:inset 0 0 0 1px var(--bad)}
 .cal-bar.ph{font-weight:700;background:color-mix(in srgb,var(--ink) 12%,var(--panel));border-left-color:var(--ink)}
+.cal-bar.crew-lucas{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 38%,var(--panel))}
+.cal-bar.crew-jason{border-left-color:var(--good);background:color-mix(in srgb,var(--good) 38%,var(--panel))}
+.chip.on.crew-jason{background:var(--good-soft);border-left-color:var(--good)}
 .chip.dl{background:var(--panel-2);border-left:3px solid var(--ink);color:var(--ink);font-weight:600}
 .chip.dl.missed,.chip.dl.overdue{background:var(--bad-soft);border-left-color:var(--bad);color:var(--bad)}
 .chip.dl.done{background:var(--good-soft);border-left-color:var(--good);color:var(--good);text-decoration:line-through}
@@ -819,6 +822,10 @@ function entryChip(e){
 const entriesOn=n=>S.entries.filter(e=>dn(e.date)===n).sort((a,b)=>(a.kind===b.kind?0:a.kind==="deadline"?-1:1));
 
 /* ---------- calendar (month) ---------- */
+// Carpenters with their own calendar color. A task is theirs when their name is in its subcontractor, contact or task name.
+const CREW=[{key:"lucas",re:/\blucas\b/i,rgb:[226,85,11]},{key:"jason",re:/\bjason\b/i,rgb:[44,138,87]}];
+function crewOf(it){for(const f of [it.sub,it.contact,it.name]){if(!f)continue;const c=CREW.find(x=>x.re.test(f));if(c)return c}return null}
+const crewClass=it=>{const c=crewOf(it);return c?" crew-"+c.key:""};
 function calendarHTML(){
   const mk=S.calMonth||monthKey(TODAY);const [y,m]=mk.split("-").map(Number);
   const first=Math.round(Date.UTC(y,m-1,1)/DAY),last=Math.round(Date.UTC(y,m,0)/DAY);
@@ -838,15 +845,15 @@ function calendarHTML(){
       entriesOn(n).forEach(e=>chips+=entryChip(e));
       S.items.forEach(it=>{
         if(it.kind==="milestone"&&dn(it.start)===n)chips+='<button type="button" class="chip ms" data-open="'+esc(it.id)+'">◆ '+esc(it.name)+"</button>";
-        if((it.onsite||[]).includes(ds(n)))chips+='<button type="button" class="chip on" data-open="'+esc(it.id)+'" title="'+esc(it.name)+'">On site: '+esc(it.sub||it.name)+"</button>";
+        if((it.onsite||[]).includes(ds(n)))chips+='<button type="button" class="chip on'+crewClass(it)+'" data-open="'+esc(it.id)+'" title="'+esc(it.name)+'">On site: '+esc(it.sub||it.name)+"</button>";
       });
       h+='<div class="cal-day'+(n<first||n>last?" out":"")+(d===0||d===6?" we":"")+(CAL.hol.has(n)?" holday":"")+(n===TODAY?" td":"")+'" data-calday="'+ds(n)+'"><span class="cal-dn">'+(date.getUTCDate()===1?fmt(n):date.getUTCDate())+'</span><div class="cal-lanes" style="height:'+(lanes.length*22)+'px"></div>'+chips+"</div>";
     }
     segs.forEach(sg=>{const it=sg.it,x=info(it);
-      h+='<button type="button" class="cal-bar '+stClass(it)+(x.late?" late":"")+(it.kind==="phase"?" ph":"")+'" data-open="'+esc(it.id)+'" style="top:'+(28+sg.l*22)+"px;left:calc("+(sg.a/7*100).toFixed(4)+"% + 3px);width:calc("+((sg.b-sg.a+1)/7*100).toFixed(4)+'% - 6px)" title="'+esc(it.name+(it.sub?" · "+it.sub:"")+" — "+fmt(x.s)+" to "+fmt(x.e))+'">'+(sg.cl?"‹ ":"")+esc(it.name)+(it.sub?' <span class="dim">· '+esc(it.sub)+"</span>":"")+(sg.cr?" ›":"")+"</button>"});
+      h+='<button type="button" class="cal-bar '+stClass(it)+(x.late?" late":"")+(it.kind==="phase"?" ph":"")+crewClass(it)+'" data-open="'+esc(it.id)+'" style="top:'+(28+sg.l*22)+"px;left:calc("+(sg.a/7*100).toFixed(4)+"% + 3px);width:calc("+((sg.b-sg.a+1)/7*100).toFixed(4)+'% - 6px)" title="'+esc(it.name+(it.sub?" · "+it.sub:"")+" — "+fmt(x.s)+" to "+fmt(x.e))+'">'+(sg.cl?"‹ ":"")+esc(it.name)+(it.sub?' <span class="dim">· '+esc(it.sub)+"</span>":"")+(sg.cr?" ›":"")+"</button>"});
     h+="</div>";
   }
-  h+='</div></div><div class="legend"><span><i class="sw" style="background:color-mix(in srgb,var(--steel) 30%,var(--panel));border-left:3px solid var(--steel)"></i>Task (color = status)</span><span><i class="sw" style="background:var(--bad-soft);border-left:3px solid var(--bad)"></i>Deadline the schedule misses or is past due</span><span><i class="sw" style="background:var(--panel-2);border-left:3px solid var(--ink)"></i>Upcoming deadline</span><span><i class="sw" style="background:var(--warn-soft);border-left:3px solid var(--warn)"></i>Note</span><span><i class="sw" style="background:var(--accent)"></i>Sub on site</span><span><i class="sw" style="background:var(--steel)"></i>◆ Milestone</span></div></div>';
+  h+='</div></div><div class="legend"><span><i class="sw" style="background:color-mix(in srgb,var(--steel) 30%,var(--panel));border-left:3px solid var(--steel)"></i>Task (color = status)</span><span><i class="sw" style="background:color-mix(in srgb,var(--accent) 38%,var(--panel));border-left:3px solid var(--accent)"></i>Lucas</span><span><i class="sw" style="background:color-mix(in srgb,var(--good) 38%,var(--panel));border-left:3px solid var(--good)"></i>Jason</span><span><i class="sw" style="background:var(--bad-soft);border-left:3px solid var(--bad)"></i>Deadline the schedule misses or is past due</span><span><i class="sw" style="background:var(--panel-2);border-left:3px solid var(--ink)"></i>Upcoming deadline</span><span><i class="sw" style="background:var(--warn-soft);border-left:3px solid var(--warn)"></i>Note</span><span><i class="sw" style="background:var(--accent)"></i>Sub on site</span><span><i class="sw" style="background:var(--steel)"></i>◆ Milestone</span></div></div>';
   return h;
 }
 function dayForm(d){
@@ -1755,8 +1762,9 @@ function drawCalendarPDF(doc,y0,g){
     if(CAL.hol.has(n))lines.push([[110,110,110],CAL.hol.get(n)]);
     entriesOn(n).forEach(e=>lines.push([e.kind==="deadline"?(["missed","overdue"].includes(entryState(e))?[198,40,40]:[27,33,38]):[185,127,0],(e.kind==="deadline"?"Due: ":"Note: ")+e.title]));
     S.items.forEach(it=>{const x0=info(it);if(it.kind==="milestone"&&x0.s===n)lines.push([[58,102,136],"* "+it.name]);
-      if(it.kind==="task"&&x0.s===n)lines.push([[27,33,38],"Start: "+it.name]);if(it.kind==="task"&&x0.e===n&&x0.e!==x0.s)lines.push([[91,102,112],"Finish: "+it.name]);
-      if((it.onsite||[]).includes(ds(n)))lines.push([[226,85,11],"On site: "+(it.sub||it.name)])});
+      const crew=crewOf(it);
+      if(it.kind==="task"&&x0.s===n)lines.push([crew?crew.rgb:[27,33,38],"Start: "+it.name]);if(it.kind==="task"&&x0.e===n&&x0.e!==x0.s)lines.push([crew?crew.rgb:[91,102,112],"Finish: "+it.name]);
+      if((it.onsite||[]).includes(ds(n)))lines.push([crew?crew.rgb:[226,85,11],"On site: "+(it.sub||it.name)])});
     doc.setFont("helvetica","normal");doc.setFontSize(6.2);const maxL=Math.floor((ch-12)/7.5);
     lines.slice(0,maxL).forEach((l,i)=>{doc.setTextColor(l[0][0],l[0][1],l[0][2]);doc.text(doc.splitTextToSize(pdfTxt(l[1]),cw-5)[0],x+3,y+17+i*7.5)});
     if(lines.length>maxL){doc.setTextColor(120);doc.text("+"+(lines.length-maxL)+" more",x+3,y+17+maxL*7.5)}
