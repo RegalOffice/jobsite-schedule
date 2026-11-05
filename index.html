@@ -822,9 +822,10 @@ function entryChip(e){
 const entriesOn=n=>S.entries.filter(e=>dn(e.date)===n).sort((a,b)=>(a.kind===b.kind?0:a.kind==="deadline"?-1:1));
 
 /* ---------- calendar (month) ---------- */
-// Carpenters with their own calendar color. A task is theirs when their name is in its subcontractor, contact or task name.
+// Carpenters with their own calendar color, on the Bancroft Carpentry project only. A task is theirs when their name is in its subcontractor, contact or task name.
 const CREW=[{key:"lucas",re:/\blucas\b/i,rgb:[226,85,11]},{key:"jason",re:/\bjason\b/i,rgb:[44,138,87]}];
-function crewOf(it){for(const f of [it.sub,it.contact,it.name]){if(!f)continue;const c=CREW.find(x=>x.re.test(f));if(c)return c}return null}
+const crewProject=()=>/\bbancroft\s+carpentry\b/i.test((project()||{}).name||"");
+function crewOf(it){if(!crewProject())return null;for(const f of [it.sub,it.contact,it.name]){if(!f)continue;const c=CREW.find(x=>x.re.test(f));if(c)return c}return null}
 const crewClass=it=>{const c=crewOf(it);return c?" crew-"+c.key:""};
 function calendarHTML(){
   const mk=S.calMonth||monthKey(TODAY);const [y,m]=mk.split("-").map(Number);
@@ -853,7 +854,7 @@ function calendarHTML(){
       h+='<button type="button" class="cal-bar '+stClass(it)+(x.late?" late":"")+(it.kind==="phase"?" ph":"")+crewClass(it)+'" data-open="'+esc(it.id)+'" style="top:'+(28+sg.l*22)+"px;left:calc("+(sg.a/7*100).toFixed(4)+"% + 3px);width:calc("+((sg.b-sg.a+1)/7*100).toFixed(4)+'% - 6px)" title="'+esc(it.name+(it.sub?" · "+it.sub:"")+" — "+fmt(x.s)+" to "+fmt(x.e))+'">'+(sg.cl?"‹ ":"")+esc(it.name)+(it.sub?' <span class="dim">· '+esc(it.sub)+"</span>":"")+(sg.cr?" ›":"")+"</button>"});
     h+="</div>";
   }
-  h+='</div></div><div class="legend"><span><i class="sw" style="background:color-mix(in srgb,var(--steel) 30%,var(--panel));border-left:3px solid var(--steel)"></i>Task (color = status)</span><span><i class="sw" style="background:color-mix(in srgb,var(--accent) 38%,var(--panel));border-left:3px solid var(--accent)"></i>Lucas</span><span><i class="sw" style="background:color-mix(in srgb,var(--good) 38%,var(--panel));border-left:3px solid var(--good)"></i>Jason</span><span><i class="sw" style="background:var(--bad-soft);border-left:3px solid var(--bad)"></i>Deadline the schedule misses or is past due</span><span><i class="sw" style="background:var(--panel-2);border-left:3px solid var(--ink)"></i>Upcoming deadline</span><span><i class="sw" style="background:var(--warn-soft);border-left:3px solid var(--warn)"></i>Note</span><span><i class="sw" style="background:var(--accent)"></i>Sub on site</span><span><i class="sw" style="background:var(--steel)"></i>◆ Milestone</span></div></div>';
+  h+='</div></div><div class="legend"><span><i class="sw" style="background:color-mix(in srgb,var(--steel) 30%,var(--panel));border-left:3px solid var(--steel)"></i>Task (color = status)</span>'+(crewProject()?'<span><i class="sw" style="background:color-mix(in srgb,var(--accent) 38%,var(--panel));border-left:3px solid var(--accent)"></i>Lucas</span><span><i class="sw" style="background:color-mix(in srgb,var(--good) 38%,var(--panel));border-left:3px solid var(--good)"></i>Jason</span>':"")+'<span><i class="sw" style="background:var(--bad-soft);border-left:3px solid var(--bad)"></i>Deadline the schedule misses or is past due</span><span><i class="sw" style="background:var(--panel-2);border-left:3px solid var(--ink)"></i>Upcoming deadline</span><span><i class="sw" style="background:var(--warn-soft);border-left:3px solid var(--warn)"></i>Note</span><span><i class="sw" style="background:var(--accent)"></i>Sub on site</span><span><i class="sw" style="background:var(--steel)"></i>◆ Milestone</span></div></div>';
   return h;
 }
 function dayForm(d){
