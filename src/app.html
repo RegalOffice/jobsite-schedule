@@ -236,9 +236,12 @@ td.num,th.num{text-align:right}
 .cal-bar.st-hold{border-left-color:var(--warn);background:color-mix(in srgb,var(--warn) 20%,var(--panel))}
 .cal-bar.late{box-shadow:inset 0 0 0 1px var(--bad)}
 .cal-bar.ph{font-weight:700;background:color-mix(in srgb,var(--ink) 12%,var(--panel));border-left-color:var(--ink)}
-.cal-bar.crew-lucas{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 38%,var(--panel))}
-.cal-bar.crew-jason{border-left-color:var(--good);background:color-mix(in srgb,var(--good) 38%,var(--panel))}
-.chip.on.crew-jason{background:var(--good-soft);border-left-color:var(--good)}
+.crew-lucas{--crew:#f57c00}
+.crew-jason{--crew:#2c8a57}
+.crew-both{--crew:#1e73d8}
+.cal-bar.crew-lucas,.cal-bar.crew-jason,.cal-bar.crew-both{border-left-color:var(--crew);background:color-mix(in srgb,var(--crew) 55%,var(--panel))}
+.cal-bar.crew-lucas .dim,.cal-bar.crew-jason .dim,.cal-bar.crew-both .dim{color:inherit;opacity:.85}
+button.chip.crew-lucas,button.chip.crew-jason,button.chip.crew-both{border-left:3px solid var(--crew);background:color-mix(in srgb,var(--crew) 30%,var(--panel));color:var(--ink)}
 .chip.dl{background:var(--panel-2);border-left:3px solid var(--ink);color:var(--ink);font-weight:600}
 .chip.dl.missed,.chip.dl.overdue{background:var(--bad-soft);border-left-color:var(--bad);color:var(--bad)}
 .chip.dl.done{background:var(--good-soft);border-left-color:var(--good);color:var(--good);text-decoration:line-through}
@@ -674,15 +677,22 @@ function entryState(e){ // note | done | missed (linked item now finishes after 
 const ENTRY_TXT={missed:"Schedule misses this",overdue:"Past due",done:"Met",ok:"Upcoming"};
 function entryChip(e){
   const st=entryState(e);const it=e.itemId&&S.items.find(i=>i.id===e.itemId);
-  return '<button type="button" class="chip '+(e.kind==="deadline"?"dl "+st:"nt")+'" data-entry="'+esc(e.id)+'" title="'+esc((e.kind==="deadline"?"Deadline":"Note")+": "+e.title+(it?" · "+it.name:"")+(e.kind==="deadline"?" · "+ENTRY_TXT[st]:""))+'">'+(e.kind==="deadline"?"Due: ":"")+esc(e.title)+"</button>";
+  return '<button type="button" class="chip '+(e.kind==="deadline"?"dl "+st:"nt")+crewClass({name:e.title})+'" data-entry="'+esc(e.id)+'" title="'+esc((e.kind==="deadline"?"Deadline":"Note")+": "+e.title+(it?" · "+it.name:"")+(e.kind==="deadline"?" · "+ENTRY_TXT[st]:""))+'">'+(e.kind==="deadline"?"Due: ":"")+esc(e.title)+"</button>";
 }
 const entriesOn=n=>S.entries.filter(e=>dn(e.date)===n).sort((a,b)=>(a.kind===b.kind?0:a.kind==="deadline"?-1:1));
 
 /* ---------- calendar (month) ---------- */
-// Carpenters with their own calendar color, on the Bancroft Carpentry project only. A task is theirs when their name is in its subcontractor, contact or task name.
-const CREW=[{key:"lucas",re:/\blucas\b/i,rgb:[226,85,11]},{key:"jason",re:/\bjason\b/i,rgb:[44,138,87]}];
+// Carpenter calendar colors, on the Bancroft Carpentry project only: Lucas orange, Jason green, both together blue.
+// Names are read from the subcontractor and task name; the contact counts only when neither of those has a name.
+const CREW={lucas:{key:"lucas",rgb:[245,124,0]},jason:{key:"jason",rgb:[44,138,87]},both:{key:"both",rgb:[30,115,216]}};
 const crewProject=()=>/\bbancroft\s+carpentry\b/i.test((project()||{}).name||"");
-function crewOf(it){if(!crewProject())return null;for(const f of [it.sub,it.contact,it.name]){if(!f)continue;const c=CREW.find(x=>x.re.test(f));if(c)return c}return null}
+function crewOf(it){
+  if(!crewProject())return null;
+  const has=t=>({l:/\bluc[au]s\b/i.test(t),j:/\bjason\b/i.test(t)});
+  let w=has([it.sub,it.name].filter(Boolean).join(" "));
+  if(!w.l&&!w.j)w=has(it.contact||"");
+  return w.l&&w.j?CREW.both:w.l?CREW.lucas:w.j?CREW.jason:null;
+}
 const crewClass=it=>{const c=crewOf(it);return c?" crew-"+c.key:""};
 function calendarHTML(){
   const mk=S.calMonth||monthKey(TODAY);const [y,m]=mk.split("-").map(Number);
@@ -711,7 +721,7 @@ function calendarHTML(){
       h+='<button type="button" class="cal-bar '+stClass(it)+(x.late?" late":"")+(it.kind==="phase"?" ph":"")+crewClass(it)+'" data-open="'+esc(it.id)+'" style="top:'+(28+sg.l*22)+"px;left:calc("+(sg.a/7*100).toFixed(4)+"% + 3px);width:calc("+((sg.b-sg.a+1)/7*100).toFixed(4)+'% - 6px)" title="'+esc(it.name+(it.sub?" · "+it.sub:"")+" — "+fmt(x.s)+" to "+fmt(x.e))+'">'+(sg.cl?"‹ ":"")+esc(it.name)+(it.sub?' <span class="dim">· '+esc(it.sub)+"</span>":"")+(sg.cr?" ›":"")+"</button>"});
     h+="</div>";
   }
-  h+='</div></div><div class="legend"><span><i class="sw" style="background:color-mix(in srgb,var(--steel) 30%,var(--panel));border-left:3px solid var(--steel)"></i>Task (color = status)</span>'+(crewProject()?'<span><i class="sw" style="background:color-mix(in srgb,var(--accent) 38%,var(--panel));border-left:3px solid var(--accent)"></i>Lucas</span><span><i class="sw" style="background:color-mix(in srgb,var(--good) 38%,var(--panel));border-left:3px solid var(--good)"></i>Jason</span>':"")+'<span><i class="sw" style="background:var(--bad-soft);border-left:3px solid var(--bad)"></i>Deadline the schedule misses or is past due</span><span><i class="sw" style="background:var(--panel-2);border-left:3px solid var(--ink)"></i>Upcoming deadline</span><span><i class="sw" style="background:var(--warn-soft);border-left:3px solid var(--warn)"></i>Note</span><span><i class="sw" style="background:var(--accent)"></i>Sub on site</span><span><i class="sw" style="background:var(--steel)"></i>◆ Milestone</span></div></div>';
+  h+='</div></div><div class="legend"><span><i class="sw" style="background:color-mix(in srgb,var(--steel) 30%,var(--panel));border-left:3px solid var(--steel)"></i>Task (color = status)</span>'+(crewProject()?'<span><i class="sw" style="background:color-mix(in srgb,#f57c00 55%,var(--panel));border-left:3px solid #f57c00"></i>Lucas</span><span><i class="sw" style="background:color-mix(in srgb,#2c8a57 55%,var(--panel));border-left:3px solid #2c8a57"></i>Jason</span><span><i class="sw" style="background:color-mix(in srgb,#1e73d8 55%,var(--panel));border-left:3px solid #1e73d8"></i>Jason &amp; Lucas</span>':"")+'<span><i class="sw" style="background:var(--bad-soft);border-left:3px solid var(--bad)"></i>Deadline the schedule misses or is past due</span><span><i class="sw" style="background:var(--panel-2);border-left:3px solid var(--ink)"></i>Upcoming deadline</span><span><i class="sw" style="background:var(--warn-soft);border-left:3px solid var(--warn)"></i>Note</span><span><i class="sw" style="background:var(--accent)"></i>Sub on site</span><span><i class="sw" style="background:var(--steel)"></i>◆ Milestone</span></div></div>';
   return h;
 }
 function dayForm(d){
